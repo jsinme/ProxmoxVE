@@ -13,12 +13,25 @@ setting_up_container
 network_check
 update_os
 
+USE_SABNZBD_USER="no"
+read -r -p "Use dedicated sabnzbd user instead of root? <y/N> " prompt
+if [[ "${prompt,,}" =~ ^(y|yes)$ ]]; then
+  DEFAULT_UID=1000
+  read -r -p "${TAB3}Enter UID for sabnzbd user [default: ${DEFAULT_UID}]: " USER_UID
+  USER_UID=${USER_UID:-$DEFAULT_UID}
+  groupadd -g "$USER_UID" sabnzbd
+  useradd -u "$USER_UID" -g "$USER_UID" -r -s /usr/sbin/nologin -d /opt/sabnzbd sabnzbd
+  msg_ok "Created sabnzbd user (UID: ${USER_UID})"
+  USE_SABNZBD_USER="yes"
+fi
+
 msg_info "Installing Dependencies"
 $STD apt install -y \
   par2 \
   p7zip-full
 msg_ok "Installed Dependencies"
 
+export UV_PYTHON_INSTALL_DIR="/opt/uv-python"
 PYTHON_VERSION="3.13" setup_uv
 
 msg_info "Setup Unrar"
@@ -40,6 +53,12 @@ $STD uv venv /opt/sabnzbd/venv
 $STD uv pip install -r /opt/sabnzbd/requirements.txt --python=/opt/sabnzbd/venv/bin/python
 msg_ok "Installed SABnzbd"
 
+if [[ "$USE_SABNZBD_USER" == "yes" ]]; then
+  msg_info "Setting Ownership"
+  chown -R sabnzbd:sabnzbd /opt/sabnzbd
+  msg_ok "Set Ownership"
+fi
+
 read -r -p "Would you like to install par2cmdline-turbo? <y/N> " prompt
 if [[ "${prompt,,}" =~ ^(y|yes)$ ]]; then
   mv /usr/bin/par2 /usr/bin/par2.old
@@ -47,7 +66,25 @@ if [[ "${prompt,,}" =~ ^(y|yes)$ ]]; then
 fi
 
 msg_info "Creating Service"
-cat <<EOF >/etc/systemd/system/sabnzbd.service
+if [[ "$USE_SABNZBD_USER" == "yes" ]]; then
+  cat <<EOF >/etc/systemd/system/sabnzbd.service
+[Unit]
+Description=SABnzbd
+After=network.target
+
+[Service]
+WorkingDirectory=/opt/sabnzbd
+ExecStart=/opt/sabnzbd/venv/bin/python SABnzbd.py -s 0.0.0.0:7777
+Restart=always
+User=sabnzbd
+Group=sabnzbd
+UMask=0002
+
+[Install]
+WantedBy=multi-user.target
+EOF
+else
+  cat <<EOF >/etc/systemd/system/sabnzbd.service
 [Unit]
 Description=SABnzbd
 After=network.target
@@ -61,6 +98,7 @@ User=root
 [Install]
 WantedBy=multi-user.target
 EOF
+fi
 systemctl enable -q --now sabnzbd
 msg_ok "Created Service"
 
