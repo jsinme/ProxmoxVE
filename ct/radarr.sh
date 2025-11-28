@@ -30,7 +30,7 @@ function update_script() {
   fi
 
   # Migration check for existing root installations
-  CURRENT_USER=$(grep "^User=" /etc/systemd/system/radarr.service 2>/dev/null | cut -d= -f2)
+  CURRENT_USER=$(grep "^User=" /etc/systemd/system/radarr.service 2>/dev/null | cut -d= -f2 || true)
   if [[ -z "$CURRENT_USER" || "$CURRENT_USER" == "root" ]]; then
     echo ""
     msg_info "Current installation runs as root"
